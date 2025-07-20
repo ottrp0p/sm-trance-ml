@@ -58,8 +58,12 @@ Thumbs.db
 *.bmp
 
 # Output files (generated data)
-output/
 *.json
+
+# Stepfile assets (large files, keep only README.txt)
+stepfile_assets/TranceMania/
+stepfile_assets/TranceMania2/
+stepfile_assets/TranceMania3/
 
 # Logs
 *.log
