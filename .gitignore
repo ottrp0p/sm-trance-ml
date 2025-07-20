@@ -60,10 +60,15 @@ Thumbs.db
 # Output files (generated data)
 *.json
 
-# Stepfile assets (large files, keep only README.txt)
-stepfile_assets/TranceMania/
-stepfile_assets/TranceMania2/
-stepfile_assets/TranceMania3/
+# Ignore everything in these directories except README.txt files
+feature_data/*
+!feature_data/README.txt
+
+output/*
+!output/README.txt
+
+stepfile_assets/*
+!stepfile_assets/README.txt
 
 # Logs
 *.log
