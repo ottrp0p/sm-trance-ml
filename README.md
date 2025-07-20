@@ -1,94 +1,185 @@
-# StepMania .sm File Parser
+# StepMania Trance ML Project
 
-This project contains a Python script to parse StepMania (.sm) files and convert them to JSON format for ML feature extraction.
+A machine learning system for predicting stepchart measures from musical features extracted from trance music audio files.
 
-## Overview
+## 🎵 Project Overview
 
-The parser extracts:
-- All top-level metadata keys (TITLE, ARTIST, BPM, etc.)
-- NOTES sections with difficulty and stepchart data
-- Stepchart data as arrays of 4-character strings representing dance steps
+This project analyzes StepMania stepcharts and their corresponding audio files to build ML models that can predict step patterns based on musical features. The system focuses on trance music with 16th note granularity for precise rhythmic analysis.
 
-## Files
+## 🏗️ Architecture
 
-- `src/feature_processing/process.py` - Main parser script
-- `test_process.py` - Test script to run on Euphoria.sm and process all files
-- `output/test/Euphoria.json` - Sample output from Euphoria.sm
-- `output/processed/` - Directory containing all processed JSON files
+### Core Components
 
-## Usage
+- **`musical_features.py`**: Extracts musical features from .ogg audio files
+- **`process.py`**: Parses StepMania .sm files into JSON format
+- **`clean.py`**: Cleans and standardizes stepchart data
+- **`profile.py`**: Analyzes stepchart character usage patterns
+- **`distro.py`**: Analyzes difficulty distribution with ban list support
 
-### Process a single file
-```python
-from src.feature_processing.process import parse_sm_file
+### Feature Extraction
 
-# Parse a single .sm file
-parsed_data = parse_sm_file("path/to/file.sm")
+The musical feature extraction system provides:
+
+- **16th note granularity**: 16 positions per 4-beat measure
+- **Dual offset handling**: Song offset + pre-offset for waveform swell
+- **Comprehensive features**: Energy, onset detection, frequency bands, spectral analysis
+- **Efficient storage**: Array-based JSON structure for ML training
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+```bash
+pip install librosa scipy numpy
 ```
 
-### Process all files in a directory
+### Extract Musical Features
+
+```python
+from src.feature_processing.musical_features import MusicalFeatureExtractor
+
+# Create extractor with song metadata
+extractor = MusicalFeatureExtractor(
+    bpm=140.0,
+    song_offset=-0.068,  # From .sm file
+    pre_offset_ms=8.0    # Waveform swell capture
+)
+
+# Extract features for multiple measures
+features = extractor.extract_song_features("song.ogg", num_measures=10)
+extractor.save_features(features, "output/features.json")
+```
+
+### Process Stepcharts
+
 ```python
 from src.feature_processing.process import process_sm_files
 
 # Process all .sm files in a directory
-process_sm_files("input_directory", "output_directory")
+process_sm_files("stepfile_assets/", "output/processed/")
 ```
 
-### Command line usage
-```bash
-python src/feature_processing/process.py input_directory output_directory
-```
+## 📊 Feature Structure
 
-### Run the test script
-```bash
-python test_process.py
-```
-
-## Output Format
-
-The JSON output contains:
+Each measure contains 24 features with 16-position arrays:
 
 ```json
 {
-  "TITLE": "Song Title",
-  "ARTIST": "Artist Name",
-  "BPM": "140.000",
-  "NOTES": [
-    {
-      "stepartist": "dance-single",
-      "difficulty": "t0ni",
-      "level": "Challenge",
-      "groovemeter": "12",
-      "stepchart": [
-        "0000",
-        "1001",
-        "0001",
-        "0010"
-      ]
-    }
-  ]
+  "measure_index": 0,
+  "measure_start_time": 0.0,
+  "rms_energy": [0.309, 0.168, 0.104, ...],      // 16 values
+  "bass_energy": [0.286, 0.081, 0.044, ...],     // 16 values
+  "onset_strength": [7.656, 4.489, 8.528, ...],  // 16 values
+  "beat_correlation": [1.0, 0.3, 0.8, ...],      // 16 values
+  // ... 20 more feature arrays
+  "measure_total_energy": 2634.94,
+  "measure_rhythm_complexity": 4.13
 }
 ```
 
-## Stepchart Format
+## 🎯 Musical Features
 
-Each stepchart line is a 4-character string representing:
-- `0` = No step
-- `1` = Step
-- `2` = Hold start
-- `3` = Hold end
-- `M` = Mine
+### Energy Features
+- **RMS Energy**: Root mean square energy at each position
+- **Peak Energy**: Maximum amplitude at each position
+- **Energy Ratio**: Peak to RMS energy ratio
 
-The 4 characters represent: Left, Down, Up, Right
+### Onset Detection
+- **Onset Strength**: Rhythmic change detection
+- **Onset Peak**: Clear onset peak detection
 
-## Example
+### Frequency Band Analysis
+- **Bass Energy**: 60-250 Hz (bass lines)
+- **Kick Energy**: 60-80 Hz (kick drums)
+- **Hi-hat Energy**: 8-12 kHz (hi-hats)
+- **Snare Energy**: 200-400 Hz (snares)
 
-The test script processes Euphoria.sm and shows:
-- 21 top-level keys extracted
-- 5 NOTES sections (different difficulties)
-- Stepchart lines: 3012 (Challenge), 2788 (Hard), 2660 (Medium), 2612 (Easy), 860 (Beginner)
+### Spectral Features
+- **Spectral Centroid**: Brightness of sound
+- **Spectral Rolloff**: Frequency distribution
+- **Spectral Bandwidth**: Frequency spread
+- **Spectral Contrast**: Harmonic content
 
-## Requirements
+### Timing Features
+- **Timing Offset**: Deviation from beat center
+- **Beat Correlation**: 4/4 time signature pattern
+- **Zero-crossing Rate**: Percussive content
 
-- Python 3.6+
-- No external dependencies (uses only standard library) 
+## 📁 Project Structure
+
+```
+sm-trance-ml/
+├── src/feature_processing/
+│   ├── musical_features.py    # Audio feature extraction
+│   ├── process.py            # .sm file processing
+│   ├── clean.py              # Stepchart cleaning
+│   ├── profile.py            # Character profiling
+│   └── distro.py             # Difficulty analysis
+├── stepfile_assets/          # StepMania files
+│   ├── TranceMania/
+│   ├── TranceMania2/
+│   └── TranceMania3/
+├── output/                   # Generated data
+└── README.md
+```
+
+## 🧪 Testing
+
+Test the musical feature extraction:
+
+```bash
+python src/feature_processing/musical_features.py
+```
+
+This will:
+1. Parse BPM and offset from a .sm file
+2. Extract features from the corresponding .ogg file
+3. Save results to `output/child_musical_features.json`
+
+## 🔧 Configuration
+
+### Offset Handling
+
+The system handles both positive and negative song offsets:
+
+- **Negative offset** (e.g., -0.068s): Adds silence to beginning
+- **Positive offset** (e.g., +0.009s): Trims audio from beginning
+- **Pre-offset**: Captures waveform swell (default: 8ms)
+
+### BPM and Timing
+
+- **Beat duration**: `60.0 / bpm` seconds per beat
+- **16th note duration**: `beat_duration / 4` seconds
+- **Measure duration**: `beat_duration * 4` seconds (4 beats)
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is for educational and research purposes.
+
+## 🎵 Dataset
+
+The project includes trance music stepcharts from:
+- TranceMania
+- TranceMania2  
+- TranceMania3
+
+Each song includes:
+- `.sm` stepchart file
+- `.ogg` audio file
+- Background images (excluded from repo)
+
+## 🔮 Future Work
+
+- [ ] Batch processing for all songs
+- [ ] ML model training pipeline
+- [ ] Feature visualization tools
+- [ ] Real-time step prediction
+- [ ] Cross-validation with different genres 
