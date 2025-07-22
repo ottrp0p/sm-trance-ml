@@ -320,8 +320,8 @@ def process_directory(input_dir: str, output_dir: str) -> None:
 
 if __name__ == "__main__":
     # Example usage
-    input_directory = "output/processed/all_songs_flat"
-    output_directory = "output/processed_16"
+    input_directory = "feature_data/processed/"
+    output_directory = "feature_data/cleaned/"
     
     if os.path.exists(input_directory):
         process_directory(input_directory, output_directory)
@@ -331,7 +331,7 @@ if __name__ == "__main__":
 
     # need to find out what's the highest granularity in our data set 
 
-    out_dir = 'feature_data/processed_final/' 
+    out_dir = 'feature_data/cleaned/' 
     measure_lengths = {}   
     offending_tracks = []
     chart_ct = 0 
@@ -357,33 +357,101 @@ if __name__ == "__main__":
                     #     print(measure)
 
                     if ct != 16:
-                        offending_tracks.append((data['TITLE'], chart['level']))
-                        print(data['TITLE'], chart['level'])
-                        print(measure)
+                        offending_tracks.append((file, chart['level']))
+
 
     print(measure_lengths)
     print(set(offending_tracks))
     print(len(set(offending_tracks)))
     print(chart_ct)
 
-    # lets try simplifying for home 12? 
 
-    # file_path = 'feature_data/processed_final/Home.json'
-    # with open(file_path, 'r') as json_file:
-    #     data = json.load(json_file)
-    #     notes = data['NOTES']
-
-    #     for note in notes: 
-    #         print(note['level'])
-    #         chart_arr = note['stepchart']
-    #         for i, measure in enumerate(chart_arr): 
-    #             new_measure_ct = find_lowest_representation(measure)
-    #             if new_measure_ct != len(measure): 
-    #                 print(f"measure {i} has {len(measure)} steps, but {new_measure_ct} is the lowest representation")
-
-    #             if len(measure) == 48 :
-    #                 print(f'measure: {i}')
-    #                 print(f'new measure ct: {new_measure_ct} ')
-    #                 print(f'old measure ct: {len(measure)} ')
-
-      
+    offending_tracks =  [('Blue Sunshine (Original Mix).json', '11'), ('Magic Waters.json', '11'), ('Good For Me (Above & Beyond Club Mix).json', '10'), ('Good For Me (Above & Beyond Club Mix).json', '12'), ('A Life So Changed.json', '12'), ("Who's afraid of 138.json", '16'), ('Euphoria.json', '11'), ('M.O.N.I. (Barcoda Project Remix).json', '13'), ('Daydream.json', '11'), ('Anahera.json', '11'), ('No Inbetween.json', '11'), ('On A Good Day (Daniel Kandi Remix).json', '9'), ("Everything (John O'Callaghan Remix).json", '10'), ('Blue Sunshine (Original Mix).json', '13'), ('Magic Waters.json', '13'), ("Everything (John O'Callaghan Remix).json", '12'), ('The Human Spirit.json', '12'), ('Good For Me (Above & Beyond Club Mix).json', '11'), ('A Life So Changed.json', '11'), ('On A Good Day (Daniel Kandi Remix).json', '10'), ('On A Good Day (Daniel Kandi Remix).json', '12'), ('Listen Feel Enjoy.json', '10'), ('Blue Sunshine (Original Mix).json', '10'), ('Listen Feel Enjoy.json', '12'), ('Magic Waters.json', '10'), ('Anahera.json', '9'), ('Blue Sunshine (Original Mix).json', '12'), ('Magic Waters.json', '12'), ('The Human Spirit.json', '11'), ("Everything (John O'Callaghan Remix).json", '11'), ('No Inbetween.json', '9'), ('Viola 2005.json', '13'), ('Euphoria.json', '12'), ('Anahera.json', '10'), ('Good For Me (Above & Beyond Club Mix).json', '9'), ('Daydream.json', '12'), ('Anahera.json', '12'), ('Stargazer.json', '13'), ('On A Good Day (Daniel Kandi Remix).json', '11'), ('No Inbetween.json', '10'), ('No Inbetween.json', '12'), ('Listen Feel Enjoy.json', '11')]
+    
+    print("\n" + "="*60)
+    print("CREATING FINAL STEPCHART FOLDER WITH EXCLUSIONS")
+    print("="*60)
+    
+    # Create final stepchart folder by copying from cleaned folder with exclusions
+    def create_final_stepchart_folder(input_dir: str, output_dir: str, exclusion_list: List[Tuple[str, str]]) -> None:
+        """
+        Create final stepchart folder by copying from cleaned folder while excluding specific song-difficulty combinations.
+        
+        Args:
+            input_dir: Directory containing cleaned JSON files
+            output_dir: Directory to save final JSON files
+            exclusion_list: List of (filename, level) tuples to exclude
+        """
+        input_path = Path(input_dir)
+        output_path = Path(output_dir)
+        
+        # Create output directory if it doesn't exist
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Convert exclusion list to set for faster lookup
+        exclusion_set = set(exclusion_list)
+        
+        # Find all JSON files
+        json_files = list(input_path.glob("*.json"))
+        
+        print(f"Found {len(json_files)} JSON files to process")
+        print(f"Excluding {len(exclusion_set)} song-difficulty combinations")
+        
+        total_charts = 0
+        excluded_charts = 0
+        processed_files = 0
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    song_data = json.load(f)
+                
+                # Get the filename for exclusion checking
+                filename = json_file.name
+                
+                # Process NOTES section, excluding specified combinations
+                if 'NOTES' in song_data:
+                    original_notes = song_data['NOTES']
+                    filtered_notes = []
+                    
+                    for chart in original_notes:
+                        total_charts += 1
+                        chart_level = chart.get('level', '')
+                        
+                        # Check if this chart should be excluded
+                        exclusion_key = (filename, chart_level)
+                        if exclusion_key in exclusion_set:
+                            excluded_charts += 1
+                            print(f"Excluding: {filename} - Level {chart_level}")
+                        else:
+                            filtered_notes.append(chart)
+                    
+                    # Update the song data with filtered notes
+                    song_data['NOTES'] = filtered_notes
+                
+                # Save the filtered data
+                output_file = output_path / json_file.name
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    json.dump(song_data, f, indent=2, ensure_ascii=False)
+                
+                processed_files += 1
+                print(f"Processed: {filename} ({len(filtered_notes)} charts kept)")
+                
+            except Exception as e:
+                print(f"Error processing {json_file}: {e}")
+        
+        print(f"\nFinal Summary:")
+        print(f"- Files processed: {processed_files}")
+        print(f"- Total charts: {total_charts}")
+        print(f"- Charts excluded: {excluded_charts}")
+        print(f"- Charts kept: {total_charts - excluded_charts}")
+        print(f"- Output directory: {output_dir}")
+    
+    # Create the final stepchart folder
+    cleaned_dir = "feature_data/cleaned/"
+    final_dir = "feature_data/stepchart_final/"
+    
+    if os.path.exists(cleaned_dir):
+        create_final_stepchart_folder(cleaned_dir, final_dir, offending_tracks)
+    else:
+        print(f"Cleaned directory {cleaned_dir} not found!")

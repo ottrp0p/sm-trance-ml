@@ -10,6 +10,7 @@ import numpy as np
 from scipy import signal
 from scipy.stats import pearsonr
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Union
 import logging
@@ -417,19 +418,59 @@ class MusicalFeatureExtractor:
         except:
             return 0.0
     
+    def calculate_total_measures(self, audio_file: Union[str, Path]) -> int:
+        """
+        Calculate the total number of measures in an audio file.
+        
+        Args:
+            audio_file: Path to audio file
+            
+        Returns:
+            Total number of measures
+        """
+        try:
+            # Load audio to get duration
+            y, sr = librosa.load(audio_file, sr=self.sr)
+            duration = len(y) / sr
+            
+            # Apply song offset adjustment
+            if self.song_offset < 0:
+                # For negative offset, we add silence, so duration increases
+                duration += abs(self.song_offset)
+            elif self.song_offset > 0:
+                # For positive offset, we trim, so duration decreases
+                duration = max(0, duration - self.song_offset)
+            
+            # Calculate total measures
+            total_measures = int(duration / self.measure_duration)
+            
+            logger.info(f"Audio duration: {duration:.2f}s, Total measures: {total_measures}")
+            return total_measures
+            
+        except Exception as e:
+            logger.error(f"Error calculating total measures for {audio_file}: {e}")
+            return 0
+    
     def extract_song_features(self, 
                             audio_file: Union[str, Path], 
-                            num_measures: int = 10) -> List[Dict[str, Union[float, List[float]]]]:
+                            num_measures: Optional[int] = None) -> List[Dict[str, Union[float, List[float]]]]:
         """
         Extract features for multiple measures of a song.
         
         Args:
             audio_file: Path to audio file
-            num_measures: Number of measures to extract (default: 10)
+            num_measures: Number of measures to extract. If None, extracts all measures.
             
         Returns:
             List of feature dictionaries, one per measure
         """
+        # If num_measures is None, calculate total measures in the song
+        if num_measures is None:
+            num_measures = self.calculate_total_measures(audio_file)
+            if num_measures == 0:
+                logger.error(f"Could not determine number of measures for {audio_file}")
+                return []
+        
         features_list = []
         
         for measure_idx in range(num_measures):
@@ -440,6 +481,9 @@ class MusicalFeatureExtractor:
             
             if measure_features:  # Only add if extraction was successful
                 features_list.append(measure_features)
+            else:
+                # If a measure fails, log it but continue with the next
+                logger.warning(f"Failed to extract features for measure {measure_idx} from {audio_file}")
         
         logger.info(f"Extracted features for {len(features_list)} measures from {audio_file}")
         return features_list
@@ -531,57 +575,117 @@ def parse_sm_metadata(sm_file_path: Union[str, Path]) -> Tuple[float, float]:
     return bpm, offset
 
 
+def find_ogg_sm_pairs(stepfile_assets_dir: Union[str, Path]) -> List[Tuple[Path, Path]]:
+    """
+    Find all .ogg files and their corresponding .sm files in stepfile_assets.
+    
+    Args:
+        stepfile_assets_dir: Directory containing stepfile assets
+        
+    Returns:
+        List of tuples (ogg_file_path, sm_file_path)
+    """
+    stepfile_assets_path = Path(stepfile_assets_dir)
+    ogg_sm_pairs = []
+    
+    # Find all .ogg files recursively
+    for ogg_file in stepfile_assets_path.rglob("*.ogg"):
+        # Look for .sm files in the same directory
+        sm_files = list(ogg_file.parent.glob("*.sm"))
+        
+        if sm_files:
+            # Use the first .sm file found in the directory
+            sm_file = sm_files[0]
+            ogg_sm_pairs.append((ogg_file, sm_file))
+            logger.info(f"Found pair: {ogg_file.name} <-> {sm_file.name}")
+        else:
+            logger.warning(f"No .sm file found in directory for {ogg_file}")
+    
+    return ogg_sm_pairs
+
+
+def process_all_songs(stepfile_assets_dir: str = "stepfile_assets", 
+                     output_dir: str = "feature_data/musical_features",
+                     num_measures: Optional[int] = None,
+                     pre_offset_ms: float = 8.0) -> None:
+    """
+    Process all .ogg files in stepfile_assets and extract musical features.
+    
+    Args:
+        stepfile_assets_dir: Directory containing stepfile assets
+        output_dir: Directory to save musical features
+        num_measures: Number of measures to extract per song. If None, extracts all measures.
+        pre_offset_ms: Pre-offset in milliseconds
+    """
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Find all ogg-sm pairs
+    ogg_sm_pairs = find_ogg_sm_pairs(stepfile_assets_dir)
+    
+    if not ogg_sm_pairs:
+        logger.error(f"No .ogg/.sm pairs found in {stepfile_assets_dir}")
+        return
+    
+    logger.info(f"Found {len(ogg_sm_pairs)} .ogg/.sm pairs to process")
+    
+    successful = 0
+    failed = 0
+    
+    for ogg_file, sm_file in ogg_sm_pairs:
+        try:
+            # Parse metadata from .sm file
+            bpm, offset = parse_sm_metadata(sm_file)
+            logger.info(f"Processing {ogg_file.name}: BPM={bpm}, Offset={offset}s")
+            
+            # Create extractor
+            extractor = MusicalFeatureExtractor(
+                bpm=bpm,
+                song_offset=offset,
+                pre_offset_ms=pre_offset_ms
+            )
+            
+            # Extract features
+            features = extractor.extract_song_features(ogg_file, num_measures=num_measures)
+            
+            if features:
+                # Create output filename based on .sm filename
+                output_filename = f"{sm_file.stem}.json"
+                output_file = output_path / output_filename
+                
+                # Save features
+                extractor.save_features(features, output_file)
+                
+                logger.info(f"✓ Successfully processed {ogg_file.name} -> {output_filename} ({len(features)} measures)")
+                successful += 1
+            else:
+                logger.warning(f"✗ No features extracted from {ogg_file.name}")
+                failed += 1
+                
+        except Exception as e:
+            logger.error(f"✗ Error processing {ogg_file.name}: {e}")
+            failed += 1
+    
+    logger.info(f"\nProcessing complete!")
+    logger.info(f"✓ Successful: {successful}")
+    logger.info(f"✗ Failed: {failed}")
+    logger.info(f"📁 Output directory: {output_dir}")
+
+
 if __name__ == "__main__":
     import re
     
-    # Test with Child song (positive offset)
-    sm_file = "stepfile_assets/TranceMania3/TranceMania 3/Child/Child.sm"
-    audio_file = "stepfile_assets/TranceMania3/TranceMania 3/Child/Child.ogg"
+    print("="*60)
+    print("MUSICAL FEATURE EXTRACTION - BATCH PROCESSING")
+    print("="*60)
     
-    # Parse metadata from .sm file
-    bpm, offset = parse_sm_metadata(sm_file)
-    print(f"Parsed metadata: BPM={bpm}, Offset={offset}s")
-    
-    # Create extractor
-    extractor = MusicalFeatureExtractor(
-        bpm=bpm,
-        song_offset=offset,
+    # Process all songs in stepfile_assets
+    process_all_songs(
+        stepfile_assets_dir="stepfile_assets",
+        output_dir="feature_data/musical_features",
+        num_measures=None,  # Extract ALL measures from each song
         pre_offset_ms=8.0  # 8ms pre-offset to capture waveform swell
     )
     
-    # Extract features for first 5 measures
-    print(f"Extracting features from {audio_file}...")
-    features = extractor.extract_song_features(audio_file, num_measures=5)
-    
-    if features:
-        # Save features
-        output_file = "output/child_musical_features.json"
-        extractor.save_features(features, output_file)
-        
-        # Print summary
-        print(f"\nExtracted features for {len(features)} measures")
-        print(f"Features per measure: {len(features[0]) if features else 0}")
-        
-        # Show sample features from first measure
-        if features:
-            first_measure = features[0]
-            print(f"\nSample features from measure 0:")
-            print(f"- Measure index: {first_measure.get('measure_index', 'N/A')}")
-            print(f"- Measure start time: {first_measure.get('measure_start_time', 'N/A')}s")
-            print(f"- Total energy: {first_measure.get('measure_total_energy', 'N/A'):.4f}")
-            print(f"- Rhythm complexity: {first_measure.get('measure_rhythm_complexity', 'N/A'):.4f}")
-            
-            # Show first few values of energy arrays
-            print(f"\nFirst 8 values of rms_energy array:")
-            rms_energy = first_measure.get('rms_energy', [])
-            for i, energy in enumerate(rms_energy[:8]):
-                print(f"- Position {i}: {energy:.6f}")
-            
-            print(f"\nFirst 8 values of bass_energy array:")
-            bass_energy = first_measure.get('bass_energy', [])
-            for i, energy in enumerate(bass_energy[:8]):
-                print(f"- Position {i}: {energy:.6f}")
-    else:
-        print("No features extracted - check if audio file exists and is valid")
-    
-    print("\nMusicalFeatureExtractor test complete!") 
+    print("\nMusicalFeatureExtractor batch processing complete!") 
