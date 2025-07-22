@@ -634,6 +634,16 @@ def process_all_songs(stepfile_assets_dir: str = "stepfile_assets",
     failed = 0
     
     for ogg_file, sm_file in ogg_sm_pairs:
+        # Create output filename based on .sm filename
+        output_filename = f"{sm_file.stem}.json"
+        output_file = output_path / output_filename
+        
+        # Check if file already exists
+        if output_file.exists():
+            logger.info(f"⏭️  Skipping {sm_file.name} - already processed ({output_filename} exists)")
+            successful += 1
+            continue
+            
         try:
             # Parse metadata from .sm file
             bpm, offset = parse_sm_metadata(sm_file)
@@ -650,10 +660,6 @@ def process_all_songs(stepfile_assets_dir: str = "stepfile_assets",
             features = extractor.extract_song_features(ogg_file, num_measures=num_measures)
             
             if features:
-                # Create output filename based on .sm filename
-                output_filename = f"{sm_file.stem}.json"
-                output_file = output_path / output_filename
-                
                 # Save features
                 extractor.save_features(features, output_file)
                 
